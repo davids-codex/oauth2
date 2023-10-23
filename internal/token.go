@@ -15,6 +15,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,7 +167,15 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 			v.Set("client_secret", clientSecret)
 		}
 	}
-	req, err := http.NewRequest("POST", tokenURL, strings.NewReader(v.Encode()))
+
+	// Specific case due cerner does not process the request properly when redirect_uri is
+	//
+	// TODO(yury): Remove the temporary-fix when the issue will be fixed
+	reader := strings.NewReader(v.Encode())
+	if strings.Contains(tokenURL, "cerner.com") {
+		reader = strings.NewReader(v.EncodeExceptRedirectionUri())
+	}
+	req, err := http.NewRequest("POST", tokenURL, reader)
 	if err != nil {
 		return nil, err
 	}
@@ -175,6 +184,44 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 		req.SetBasicAuth(url.QueryEscape(clientID), url.QueryEscape(clientSecret))
 	}
 	return req, nil
+}
+
+// Values maps a string key to a list of values.
+// It is typically used for query parameters and form values.
+// Unlike in the http.Header map, the keys in a Values map
+// are case-sensitive.
+type Values map[string][]string
+
+// Encode encodes the values into “URL encoded” form
+// ("bar=baz&foo=quux") sorted by key.
+func (v Values) EncodeExceptRedirectionUri() string {
+	if v == nil {
+		return ""
+	}
+	var buf strings.Builder
+	keys := make([]string, 0, len(v))
+	for k := range v {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		vs := v[k]
+		keyEscaped := url.QueryEscape(k)
+		for _, v := range vs {
+			if buf.Len() > 0 {
+				buf.WriteByte('&')
+			}
+			buf.WriteString(keyEscaped)
+			buf.WriteByte('=')
+			// We don't encode redirect_uri for cerner.com
+			if keyEscaped == "redirect_uri" {
+				buf.WriteString(v)
+			} else {
+				buf.WriteString(url.QueryEscape(v))
+			}
+		}
+	}
+	return buf.String()
 }
 
 func cloneURLValues(v url.Values) url.Values {
