@@ -173,7 +173,7 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 	// TODO(yury): Remove the temporary-fix when the issue will be fixed
 	reader := strings.NewReader(v.Encode())
 	if strings.Contains(tokenURL, "cerner.com") {
-		reader = strings.NewReader(v.EncodeExceptRedirectionUri())
+		reader = strings.NewReader(encodeExceptRedirectionUri(v))
 	}
 	req, err := http.NewRequest("POST", tokenURL, reader)
 	if err != nil {
@@ -186,15 +186,9 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 	return req, nil
 }
 
-// Values maps a string key to a list of values.
-// It is typically used for query parameters and form values.
-// Unlike in the http.Header map, the keys in a Values map
-// are case-sensitive.
-type Values map[string][]string
-
-// Encode encodes the values into “URL encoded” form
+// encodeExceptRedirectionUri encodes the values into “URL encoded” form
 // ("bar=baz&foo=quux") sorted by key.
-func (v Values) EncodeExceptRedirectionUri() string {
+func encodeExceptRedirectionUri(v url.Values) string {
 	if v == nil {
 		return ""
 	}
