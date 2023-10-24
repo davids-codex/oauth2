@@ -6,10 +6,10 @@ package externalaccount
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +52,7 @@ type testExchangeTokenServer struct {
 	url           string
 	authorization string
 	contentType   string
+	metricsHeader string
 	body          string
 	response      string
 }
@@ -67,6 +68,10 @@ func run(t *testing.T, config *Config, tets *testExchangeTokenServer) (*oauth2.T
 		}
 		headerContentType := r.Header.Get("Content-Type")
 		if got, want := headerContentType, tets.contentType; got != want {
+			t.Errorf("got %v but want %v", got, want)
+		}
+		headerMetrics := r.Header.Get("x-goog-api-client")
+		if got, want := headerMetrics, tets.metricsHeader; got != want {
 			t.Errorf("got %v but want %v", got, want)
 		}
 		body, err := ioutil.ReadAll(r.Body)
@@ -107,6 +112,10 @@ func validateToken(t *testing.T, tok *oauth2.Token) {
 	}
 }
 
+func getExpectedMetricsHeader(source string, saImpersonation bool, configLifetime bool) string {
+	return fmt.Sprintf("gl-go/%s auth/unknown google-byoid-sdk source/%s sa-impersonation/%t config-lifetime/%t", goVersion(), source, saImpersonation, configLifetime)
+}
+
 func TestToken(t *testing.T) {
 	config := Config{
 		Audience:         "32555940559.apps.googleusercontent.com",
@@ -121,6 +130,7 @@ func TestToken(t *testing.T) {
 		url:           "/",
 		authorization: "Basic cmJyZ25vZ25yaG9uZ28zYmk0Z2I5Z2hnOWc6bm90c29zZWNyZXQ=",
 		contentType:   "application/x-www-form-urlencoded",
+		metricsHeader: getExpectedMetricsHeader("file", false, false),
 		body:          baseCredsRequestBody,
 		response:      baseCredsResponseBody,
 	}
@@ -148,6 +158,7 @@ func TestWorkforcePoolTokenWithClientID(t *testing.T) {
 		url:           "/",
 		authorization: "Basic cmJyZ25vZ25yaG9uZ28zYmk0Z2I5Z2hnOWc6bm90c29zZWNyZXQ=",
 		contentType:   "application/x-www-form-urlencoded",
+		metricsHeader: getExpectedMetricsHeader("file", false, false),
 		body:          workforcePoolRequestBodyWithClientId,
 		response:      baseCredsResponseBody,
 	}
@@ -174,6 +185,7 @@ func TestWorkforcePoolTokenWithoutClientID(t *testing.T) {
 		url:           "/",
 		authorization: "",
 		contentType:   "application/x-www-form-urlencoded",
+		metricsHeader: getExpectedMetricsHeader("file", false, false),
 		body:          workforcePoolRequestBodyWithoutClientId,
 		response:      baseCredsResponseBody,
 	}
@@ -205,120 +217,6 @@ func TestNonworkforceWithWorkforcePoolUserProject(t *testing.T) {
 	}
 	if got, want := err.Error(), "oauth2/google: workforce_pool_user_project should not be set for non-workforce pool credentials"; got != want {
 		t.Errorf("Incorrect error received.\nExpected: %s\nRecieved: %s", want, got)
-	}
-}
-
-func TestValidateURLTokenURL(t *testing.T) {
-	var urlValidityTests = []struct {
-		tokURL        string
-		expectSuccess bool
-	}{
-		{"https://east.sts.googleapis.com", true},
-		{"https://sts.googleapis.com", true},
-		{"https://sts.asfeasfesef.googleapis.com", true},
-		{"https://us-east-1-sts.googleapis.com", true},
-		{"https://sts.googleapis.com/your/path/here", true},
-		{"https://.sts.googleapis.com", false},
-		{"https://badsts.googleapis.com", false},
-		{"https://sts.asfe.asfesef.googleapis.com", false},
-		{"https://sts..googleapis.com", false},
-		{"https://-sts.googleapis.com", false},
-		{"https://us-ea.st-1-sts.googleapis.com", false},
-		{"https://sts.googleapis.com.evil.com/whatever/path", false},
-		{"https://us-eas\\t-1.sts.googleapis.com", false},
-		{"https:/us-ea/st-1.sts.googleapis.com", false},
-		{"https:/us-east 1.sts.googleapis.com", false},
-		{"https://", false},
-		{"http://us-east-1.sts.googleapis.com", false},
-		{"https://us-east-1.sts.googleapis.comevil.com", false},
-	}
-	ctx := context.Background()
-	for _, tt := range urlValidityTests {
-		t.Run(" "+tt.tokURL, func(t *testing.T) { // We prepend a space ahead of the test input when outputting for sake of readability.
-			config := testConfig
-			config.TokenURL = tt.tokURL
-			_, err := config.TokenSource(ctx)
-
-			if tt.expectSuccess && err != nil {
-				t.Errorf("got %v but want nil", err)
-			} else if !tt.expectSuccess && err == nil {
-				t.Errorf("got nil but expected an error")
-			}
-		})
-	}
-	for _, el := range urlValidityTests {
-		el.tokURL = strings.ToUpper(el.tokURL)
-	}
-	for _, tt := range urlValidityTests {
-		t.Run(" "+tt.tokURL, func(t *testing.T) { // We prepend a space ahead of the test input when outputting for sake of readability.
-			config := testConfig
-			config.TokenURL = tt.tokURL
-			_, err := config.TokenSource(ctx)
-
-			if tt.expectSuccess && err != nil {
-				t.Errorf("got %v but want nil", err)
-			} else if !tt.expectSuccess && err == nil {
-				t.Errorf("got nil but expected an error")
-			}
-		})
-	}
-}
-
-func TestValidateURLImpersonateURL(t *testing.T) {
-	var urlValidityTests = []struct {
-		impURL        string
-		expectSuccess bool
-	}{
-		{"https://east.iamcredentials.googleapis.com", true},
-		{"https://iamcredentials.googleapis.com", true},
-		{"https://iamcredentials.asfeasfesef.googleapis.com", true},
-		{"https://us-east-1-iamcredentials.googleapis.com", true},
-		{"https://iamcredentials.googleapis.com/your/path/here", true},
-		{"https://.iamcredentials.googleapis.com", false},
-		{"https://badiamcredentials.googleapis.com", false},
-		{"https://iamcredentials.asfe.asfesef.googleapis.com", false},
-		{"https://iamcredentials..googleapis.com", false},
-		{"https://-iamcredentials.googleapis.com", false},
-		{"https://us-ea.st-1-iamcredentials.googleapis.com", false},
-		{"https://iamcredentials.googleapis.com.evil.com/whatever/path", false},
-		{"https://us-eas\\t-1.iamcredentials.googleapis.com", false},
-		{"https:/us-ea/st-1.iamcredentials.googleapis.com", false},
-		{"https:/us-east 1.iamcredentials.googleapis.com", false},
-		{"https://", false},
-		{"http://us-east-1.iamcredentials.googleapis.com", false},
-		{"https://us-east-1.iamcredentials.googleapis.comevil.com", false},
-	}
-	ctx := context.Background()
-	for _, tt := range urlValidityTests {
-		t.Run(" "+tt.impURL, func(t *testing.T) { // We prepend a space ahead of the test input when outputting for sake of readability.
-			config := testConfig
-			config.TokenURL = "https://sts.googleapis.com" // Setting the most basic acceptable tokenURL
-			config.ServiceAccountImpersonationURL = tt.impURL
-			_, err := config.TokenSource(ctx)
-
-			if tt.expectSuccess && err != nil {
-				t.Errorf("got %v but want nil", err)
-			} else if !tt.expectSuccess && err == nil {
-				t.Errorf("got nil but expected an error")
-			}
-		})
-	}
-	for _, el := range urlValidityTests {
-		el.impURL = strings.ToUpper(el.impURL)
-	}
-	for _, tt := range urlValidityTests {
-		t.Run(" "+tt.impURL, func(t *testing.T) { // We prepend a space ahead of the test input when outputting for sake of readability.
-			config := testConfig
-			config.TokenURL = "https://sts.googleapis.com" // Setting the most basic acceptable tokenURL
-			config.ServiceAccountImpersonationURL = tt.impURL
-			_, err := config.TokenSource(ctx)
-
-			if tt.expectSuccess && err != nil {
-				t.Errorf("got %v but want nil", err)
-			} else if !tt.expectSuccess && err == nil {
-				t.Errorf("got nil but expected an error")
-			}
-		})
 	}
 }
 

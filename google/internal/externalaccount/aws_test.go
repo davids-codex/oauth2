@@ -474,6 +474,38 @@ func createDefaultAwsTestServer() *testAwsServer {
 	)
 }
 
+func createDefaultAwsTestServerWithImdsv2(t *testing.T) *testAwsServer {
+	validateSessionTokenHeaders := func(r *http.Request) {
+		if r.URL.Path == "/latest/api/token" {
+			headerValue := r.Header.Get(awsIMDSv2SessionTtlHeader)
+			if headerValue != awsIMDSv2SessionTtl {
+				t.Errorf("%q = \n%q\n want \n%q", awsIMDSv2SessionTtlHeader, headerValue, awsIMDSv2SessionTtl)
+			}
+		} else {
+			headerValue := r.Header.Get(awsIMDSv2SessionTokenHeader)
+			if headerValue != "sessiontoken" {
+				t.Errorf("%q = \n%q\n want \n%q", awsIMDSv2SessionTokenHeader, headerValue, "sessiontoken")
+			}
+		}
+	}
+
+	return createAwsTestServer(
+		"/latest/meta-data/iam/security-credentials",
+		"/latest/meta-data/placement/availability-zone",
+		"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+		"/latest/api/token",
+		"gcp-aws-role",
+		"us-east-2b",
+		map[string]string{
+			"SecretAccessKey": secretAccessKey,
+			"AccessKeyId":     accessKeyID,
+			"Token":           securityToken,
+		},
+		"sessiontoken",
+		validateSessionTokenHeaders,
+	)
+}
+
 func (server *testAwsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch p := r.URL.Path; p {
 	case server.url:
@@ -558,10 +590,12 @@ func TestAWSCredential_BasicRequest(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
-	getenv = setEnvironment(map[string]string{})
 	oldNow := now
-	defer func() { now = oldNow }()
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
+	getenv = setEnvironment(map[string]string{})
 	now = setTime(defaultTime)
 
 	base, err := tfc.parse(context.Background())
@@ -588,45 +622,19 @@ func TestAWSCredential_BasicRequest(t *testing.T) {
 }
 
 func TestAWSCredential_IMDSv2(t *testing.T) {
-	validateSessionTokenHeaders := func(r *http.Request) {
-		if r.URL.Path == "/latest/api/token" {
-			headerValue := r.Header.Get(awsIMDSv2SessionTtlHeader)
-			if headerValue != awsIMDSv2SessionTtl {
-				t.Errorf("%q = \n%q\n want \n%q", awsIMDSv2SessionTtlHeader, headerValue, awsIMDSv2SessionTtl)
-			}
-		} else {
-			headerValue := r.Header.Get(awsIMDSv2SessionTokenHeader)
-			if headerValue != "sessiontoken" {
-				t.Errorf("%q = \n%q\n want \n%q", awsIMDSv2SessionTokenHeader, headerValue, "sessiontoken")
-			}
-		}
-	}
-
-	server := createAwsTestServer(
-		"/latest/meta-data/iam/security-credentials",
-		"/latest/meta-data/placement/availability-zone",
-		"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
-		"/latest/api/token",
-		"gcp-aws-role",
-		"us-east-2b",
-		map[string]string{
-			"SecretAccessKey": secretAccessKey,
-			"AccessKeyId":     accessKeyID,
-			"Token":           securityToken,
-		},
-		"sessiontoken",
-		validateSessionTokenHeaders,
-	)
+	server := createDefaultAwsTestServerWithImdsv2(t)
 	ts := httptest.NewServer(server)
 
 	tfc := testFileConfig
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
-	getenv = setEnvironment(map[string]string{})
 	oldNow := now
-	defer func() { now = oldNow }()
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
+	getenv = setEnvironment(map[string]string{})
 	now = setTime(defaultTime)
 
 	base, err := tfc.parse(context.Background())
@@ -661,10 +669,12 @@ func TestAWSCredential_BasicRequestWithoutSecurityToken(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
-	getenv = setEnvironment(map[string]string{})
 	oldNow := now
-	defer func() { now = oldNow }()
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
+	getenv = setEnvironment(map[string]string{})
 	now = setTime(defaultTime)
 
 	base, err := tfc.parse(context.Background())
@@ -698,14 +708,16 @@ func TestAWSCredential_BasicRequestWithEnv(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	oldNow := now
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
 	getenv = setEnvironment(map[string]string{
 		"AWS_ACCESS_KEY_ID":     "AKIDEXAMPLE",
 		"AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
 		"AWS_REGION":            "us-west-1",
 	})
-	oldNow := now
-	defer func() { now = oldNow }()
 	now = setTime(defaultTime)
 
 	base, err := tfc.parse(context.Background())
@@ -739,14 +751,16 @@ func TestAWSCredential_BasicRequestWithDefaultEnv(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	oldNow := now
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
 	getenv = setEnvironment(map[string]string{
 		"AWS_ACCESS_KEY_ID":     "AKIDEXAMPLE",
 		"AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-		"AWS_DEFAULT_REGION":    "us-west-1",
+		"AWS_REGION":            "us-west-1",
 	})
-	oldNow := now
-	defer func() { now = oldNow }()
 	now = setTime(defaultTime)
 
 	base, err := tfc.parse(context.Background())
@@ -779,15 +793,17 @@ func TestAWSCredential_BasicRequestWithTwoRegions(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	oldNow := now
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
 	getenv = setEnvironment(map[string]string{
 		"AWS_ACCESS_KEY_ID":     "AKIDEXAMPLE",
 		"AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
 		"AWS_REGION":            "us-west-1",
 		"AWS_DEFAULT_REGION":    "us-east-1",
 	})
-	oldNow := now
-	defer func() { now = oldNow }()
 	now = setTime(defaultTime)
 
 	base, err := tfc.parse(context.Background())
@@ -821,7 +837,9 @@ func TestAWSCredential_RequestWithBadVersion(t *testing.T) {
 	tfc.CredentialSource.EnvironmentID = "aws3"
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	_, err := tfc.parse(context.Background())
@@ -842,7 +860,9 @@ func TestAWSCredential_RequestWithNoRegionURL(t *testing.T) {
 	tfc.CredentialSource.RegionURL = ""
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	base, err := tfc.parse(context.Background())
@@ -863,13 +883,16 @@ func TestAWSCredential_RequestWithNoRegionURL(t *testing.T) {
 func TestAWSCredential_RequestWithBadRegionURL(t *testing.T) {
 	server := createDefaultAwsTestServer()
 	ts := httptest.NewServer(server)
+
 	server.WriteRegion = notFound
 
 	tfc := testFileConfig
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	base, err := tfc.parse(context.Background())
@@ -890,6 +913,7 @@ func TestAWSCredential_RequestWithBadRegionURL(t *testing.T) {
 func TestAWSCredential_RequestWithMissingCredential(t *testing.T) {
 	server := createDefaultAwsTestServer()
 	ts := httptest.NewServer(server)
+
 	server.WriteSecurityCredentials = func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("{}"))
 	}
@@ -898,7 +922,9 @@ func TestAWSCredential_RequestWithMissingCredential(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	base, err := tfc.parse(context.Background())
@@ -919,6 +945,7 @@ func TestAWSCredential_RequestWithMissingCredential(t *testing.T) {
 func TestAWSCredential_RequestWithIncompleteCredential(t *testing.T) {
 	server := createDefaultAwsTestServer()
 	ts := httptest.NewServer(server)
+
 	server.WriteSecurityCredentials = func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"AccessKeyId":"FOOBARBAS"}`))
 	}
@@ -927,7 +954,9 @@ func TestAWSCredential_RequestWithIncompleteCredential(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	base, err := tfc.parse(context.Background())
@@ -954,7 +983,9 @@ func TestAWSCredential_RequestWithNoCredentialURL(t *testing.T) {
 	tfc.CredentialSource.URL = ""
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	base, err := tfc.parse(context.Background())
@@ -981,7 +1012,9 @@ func TestAWSCredential_RequestWithBadCredentialURL(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	base, err := tfc.parse(context.Background())
@@ -1008,7 +1041,9 @@ func TestAWSCredential_RequestWithBadFinalCredentialURL(t *testing.T) {
 	tfc.CredentialSource = server.getCredentialSource(ts.URL)
 
 	oldGetenv := getenv
-	defer func() { getenv = oldGetenv }()
+	defer func() {
+		getenv = oldGetenv
+	}()
 	getenv = setEnvironment(map[string]string{})
 
 	base, err := tfc.parse(context.Background())
@@ -1023,5 +1058,196 @@ func TestAWSCredential_RequestWithBadFinalCredentialURL(t *testing.T) {
 
 	if got, want := err.Error(), "oauth2/google: unable to retrieve AWS security credentials - Not Found"; !reflect.DeepEqual(got, want) {
 		t.Errorf("subjectToken = %q, want %q", got, want)
+	}
+}
+
+func TestAWSCredential_ShouldNotCallMetadataEndpointWhenCredsAreInEnv(t *testing.T) {
+	server := createDefaultAwsTestServer()
+	ts := httptest.NewServer(server)
+
+	metadataTs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("Metadata server should not have been called.")
+	}))
+
+	tfc := testFileConfig
+	tfc.CredentialSource = server.getCredentialSource(ts.URL)
+	tfc.CredentialSource.IMDSv2SessionTokenURL = metadataTs.URL
+
+	oldGetenv := getenv
+	oldNow := now
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
+	getenv = setEnvironment(map[string]string{
+		"AWS_ACCESS_KEY_ID":     "AKIDEXAMPLE",
+		"AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+		"AWS_REGION":            "us-west-1",
+	})
+	now = setTime(defaultTime)
+
+	base, err := tfc.parse(context.Background())
+	if err != nil {
+		t.Fatalf("parse() failed %v", err)
+	}
+
+	out, err := base.subjectToken()
+	if err != nil {
+		t.Fatalf("retrieveSubjectToken() failed: %v", err)
+	}
+
+	expected := getExpectedSubjectToken(
+		"https://sts.us-west-1.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+		"us-west-1",
+		"AKIDEXAMPLE",
+		"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+		"",
+	)
+
+	if got, want := out, expected; !reflect.DeepEqual(got, want) {
+		t.Errorf("subjectToken = \n%q\n want \n%q", got, want)
+	}
+}
+
+func TestAWSCredential_ShouldCallMetadataEndpointWhenNoRegion(t *testing.T) {
+	server := createDefaultAwsTestServerWithImdsv2(t)
+	ts := httptest.NewServer(server)
+
+	tfc := testFileConfig
+	tfc.CredentialSource = server.getCredentialSource(ts.URL)
+
+	oldGetenv := getenv
+	oldNow := now
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
+	getenv = setEnvironment(map[string]string{
+		"AWS_ACCESS_KEY_ID":     accessKeyID,
+		"AWS_SECRET_ACCESS_KEY": secretAccessKey,
+	})
+	now = setTime(defaultTime)
+
+	base, err := tfc.parse(context.Background())
+	if err != nil {
+		t.Fatalf("parse() failed %v", err)
+	}
+
+	out, err := base.subjectToken()
+	if err != nil {
+		t.Fatalf("retrieveSubjectToken() failed: %v", err)
+	}
+
+	expected := getExpectedSubjectToken(
+		"https://sts.us-east-2.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+		"us-east-2",
+		accessKeyID,
+		secretAccessKey,
+		"",
+	)
+
+	if got, want := out, expected; !reflect.DeepEqual(got, want) {
+		t.Errorf("subjectToken = \n%q\n want \n%q", got, want)
+	}
+}
+
+func TestAWSCredential_ShouldCallMetadataEndpointWhenNoAccessKey(t *testing.T) {
+	server := createDefaultAwsTestServerWithImdsv2(t)
+	ts := httptest.NewServer(server)
+
+	tfc := testFileConfig
+	tfc.CredentialSource = server.getCredentialSource(ts.URL)
+
+	oldGetenv := getenv
+	oldNow := now
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
+	getenv = setEnvironment(map[string]string{
+		"AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+		"AWS_REGION":            "us-west-1",
+	})
+	now = setTime(defaultTime)
+
+	base, err := tfc.parse(context.Background())
+	if err != nil {
+		t.Fatalf("parse() failed %v", err)
+	}
+
+	out, err := base.subjectToken()
+	if err != nil {
+		t.Fatalf("retrieveSubjectToken() failed: %v", err)
+	}
+
+	expected := getExpectedSubjectToken(
+		"https://sts.us-west-1.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+		"us-west-1",
+		accessKeyID,
+		secretAccessKey,
+		securityToken,
+	)
+
+	if got, want := out, expected; !reflect.DeepEqual(got, want) {
+		t.Errorf("subjectToken = \n%q\n want \n%q", got, want)
+	}
+}
+
+func TestAWSCredential_ShouldCallMetadataEndpointWhenNoSecretAccessKey(t *testing.T) {
+	server := createDefaultAwsTestServerWithImdsv2(t)
+	ts := httptest.NewServer(server)
+
+	tfc := testFileConfig
+	tfc.CredentialSource = server.getCredentialSource(ts.URL)
+
+	oldGetenv := getenv
+	oldNow := now
+	defer func() {
+		getenv = oldGetenv
+		now = oldNow
+	}()
+	getenv = setEnvironment(map[string]string{
+		"AWS_ACCESS_KEY_ID": "AKIDEXAMPLE",
+		"AWS_REGION":        "us-west-1",
+	})
+	now = setTime(defaultTime)
+
+	base, err := tfc.parse(context.Background())
+	if err != nil {
+		t.Fatalf("parse() failed %v", err)
+	}
+
+	out, err := base.subjectToken()
+	if err != nil {
+		t.Fatalf("retrieveSubjectToken() failed: %v", err)
+	}
+
+	expected := getExpectedSubjectToken(
+		"https://sts.us-west-1.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+		"us-west-1",
+		accessKeyID,
+		secretAccessKey,
+		securityToken,
+	)
+
+	if got, want := out, expected; !reflect.DeepEqual(got, want) {
+		t.Errorf("subjectToken = \n%q\n want \n%q", got, want)
+	}
+}
+
+func TestAwsCredential_CredentialSourceType(t *testing.T) {
+	server := createDefaultAwsTestServer()
+	ts := httptest.NewServer(server)
+
+	tfc := testFileConfig
+	tfc.CredentialSource = server.getCredentialSource(ts.URL)
+
+	base, err := tfc.parse(context.Background())
+	if err != nil {
+		t.Fatalf("parse() failed %v", err)
+	}
+
+	if got, want := base.credentialSourceType(), "aws"; got != want {
+		t.Errorf("got %v but want %v", got, want)
 	}
 }

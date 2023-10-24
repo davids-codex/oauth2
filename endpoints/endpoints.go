@@ -67,8 +67,9 @@ var Fitbit = oauth2.Endpoint{
 
 // GitHub is the endpoint for Github.
 var GitHub = oauth2.Endpoint{
-	AuthURL:  "https://github.com/login/oauth/authorize",
-	TokenURL: "https://github.com/login/oauth/access_token",
+	AuthURL:       "https://github.com/login/oauth/authorize",
+	TokenURL:      "https://github.com/login/oauth/access_token",
+	DeviceAuthURL: "https://github.com/login/device/code",
 }
 
 // GitLab is the endpoint for GitLab.
@@ -81,6 +82,7 @@ var GitLab = oauth2.Endpoint{
 var Google = oauth2.Endpoint{
 	AuthURL:  "https://accounts.google.com/o/oauth2/auth",
 	TokenURL: "https://oauth2.googleapis.com/token",
+	DeviceAuthURL: "https://oauth2.googleapis.com/device/code",
 }
 
 // Heroku is the endpoint for Heroku.

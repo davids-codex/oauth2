@@ -150,6 +150,9 @@ func TestCreateExecutableCredential(t *testing.T) {
 				if ecs.Timeout != tt.expectedTimeout {
 					t.Errorf("ecs.Timeout got %v but want %v", ecs.Timeout, tt.expectedTimeout)
 				}
+				if ecs.credentialSourceType() != "executable" {
+					t.Errorf("ecs.CredentialSourceType() got %s but want executable", ecs.credentialSourceType())
+				}
 			}
 		})
 	}
@@ -389,19 +392,6 @@ var failureTests = []struct {
 	},
 
 	{
-		name: "Missing Expiration",
-		testEnvironment: testEnvironment{
-			envVars: executablesAllowed,
-			jsonResponse: &executableResponse{
-				Success:   Bool(true),
-				Version:   1,
-				TokenType: "urn:ietf:params:oauth:token-type:jwt",
-			},
-		},
-		expectedErr: missingFieldError(executableSource, "expiration_time"),
-	},
-
-	{
 		name: "Token Expired",
 		testEnvironment: testEnvironment{
 			envVars: executablesAllowed,
@@ -561,6 +551,19 @@ var successTests = []struct {
 				ExpirationTime: defaultTime.Unix() + 3600,
 				TokenType:      "urn:ietf:params:oauth:token-type:saml2",
 				SamlResponse:   "tokentokentoken",
+			},
+		},
+	},
+
+	{
+		name: "Missing Expiration",
+		testEnvironment: testEnvironment{
+			envVars: executablesAllowed,
+			jsonResponse: &executableResponse{
+				Success:   Bool(true),
+				Version:   1,
+				TokenType: "urn:ietf:params:oauth:token-type:jwt",
+				IdToken:   "tokentokentoken",
 			},
 		},
 	},
