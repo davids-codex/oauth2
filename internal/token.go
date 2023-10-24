@@ -171,10 +171,7 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 	// Specific case due cerner does not process the request properly when redirect_uri is
 	//
 	// TODO(yury): Remove the temporary-fix when the issue will be fixed
-	reader := strings.NewReader(v.Encode())
-	if strings.Contains(tokenURL, "cerner.com") {
-		reader = strings.NewReader(encodeExceptRedirectionUri(v))
-	}
+	reader := getReader(tokenURL, v)
 	req, err := http.NewRequest("POST", tokenURL, reader)
 	if err != nil {
 		return nil, err
@@ -184,6 +181,14 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 		req.SetBasicAuth(url.QueryEscape(clientID), url.QueryEscape(clientSecret))
 	}
 	return req, nil
+}
+
+func getReader(tokenURL string, v url.Values) *strings.Reader {
+	if strings.Contains(tokenURL, "cerner.com") {
+		return strings.NewReader(encodeExceptRedirectionUri(v))
+	}
+
+	return strings.NewReader(v.Encode())
 }
 
 // encodeExceptRedirectionUri encodes the values into “URL encoded” form
