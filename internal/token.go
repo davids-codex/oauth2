@@ -195,10 +195,7 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 	// Specific case due cerner does not process the request properly when redirect_uri is
 	//
 	// TODO(yury): Remove the temporary-fix when the issue will be fixed
-	reader := strings.NewReader(v.Encode())
-	if strings.Contains(tokenURL, "cerner.com") {
-		reader = strings.NewReader(v.EncodeExceptRedirectionUri())
-	}
+	reader := getReader(tokenURL, v)
 	req, err := http.NewRequest("POST", tokenURL, reader)
 	if err != nil {
 		return nil, err
@@ -210,15 +207,17 @@ func newTokenRequest(tokenURL, clientID, clientSecret string, v url.Values, auth
 	return req, nil
 }
 
-// Values maps a string key to a list of values.
-// It is typically used for query parameters and form values.
-// Unlike in the http.Header map, the keys in a Values map
-// are case-sensitive.
-type Values map[string][]string
+func getReader(tokenURL string, v url.Values) *strings.Reader {
+	if strings.Contains(tokenURL, "cerner.com") {
+		return strings.NewReader(encodeExceptRedirectionUri(v))
+	}
 
-// Encode encodes the values into “URL encoded” form
+	return strings.NewReader(v.Encode())
+}
+
+// encodeExceptRedirectionUri encodes the values into “URL encoded” form
 // ("bar=baz&foo=quux") sorted by key.
-func (v Values) EncodeExceptRedirectionUri() string {
+func encodeExceptRedirectionUri(v url.Values) string {
 	if v == nil {
 		return ""
 	}
